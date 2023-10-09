@@ -1,5 +1,5 @@
-#ifndef __DRV_W25QXX_H
-#define __DRV_W25QXX_H
+#ifndef __DRV_SPI_SD_H
+#define __DRV_SPI_SD_H
 #include <stdint.h>
 #include <stdbool.h>
 
