@@ -2,6 +2,24 @@
 #include <math.h>
 #include <stdio.h>
 
+typedef enum{
+	SD_CMD0=0,			//restart
+	SD_CMD1=1,			//mmc init
+	SD_CMD8=8,			//status
+	SD_CMD9=9,			//read data reg
+	SD_CMD12=12,		//read more stop
+	SD_CMD10=10,		//read sign reg
+	SD_CMD16=16,		//set block Byte size
+	SD_CMD17=17,		//read a block
+	SD_CMD18=18,		//read more block
+	SD_CMD23=23,		//erase a block
+	SD_CMD24=24,		//write a block
+	SD_CMD25=25,		//write more block
+	SD_CMD41=41,		//messig & init
+	SD_CMD55=55,		//next cmd
+	SD_CMD58=58,		//read OCR reg
+}SD_CMD;
+
 /**********************************************************  **********************************************************/
 static void DRV_SPI_SD_TransmitReceive(SPI_SD *spi_sd, uint8_t* tx, uint8_t* rx, uint16_t len);
 static void DRV_SPI_SD_Speed(SPI_SD *spi_sd, uint32_t kbps);
@@ -21,30 +39,30 @@ static uint8_t DRV_SPI_SD_GetCID(SPI_SD *spi_sd, uint8_t *cid_data);
 
 /**********************************************************  **********************************************************/
 void DRV_SPI_SD_Init(SPI_SD *spi_sd){
-	uint8_t r1=0;      	// ´æ·ÅSD¿¨µÄ·µ»ØÖµ
-  uint16_t retry;	// ÓÃÀ´½øĞĞ³¬Ê±¼ÆÊı
+	uint8_t r1=0;      	// å­˜æ”¾SDå¡çš„è¿”å›å€¼
+  uint16_t retry;	// ç”¨æ¥è¿›è¡Œè¶…æ—¶è®¡æ•°
   uint8_t buf[4];
 	uint16_t i;
 	
 	spi_sd->status.type = SD_TYPE_INIT_FAIL;
 	
 	DRV_SPI_SD_Select(spi_sd, true);
-	DRV_SPI_SD_Speed(spi_sd, 250);	//ÅäÖÃÎªµÍËÙ¶ÈÄ£Ê½
+	DRV_SPI_SD_Speed(spi_sd, 250);	//é…ç½®ä¸ºä½é€Ÿåº¦æ¨¡å¼
 	
-	for(i=0;i<10;i++)	//·¢ËÍÖÁÉÙ74¸öÂö³å
+	for(i=0;i<10;i++)	//å‘é€è‡³å°‘74ä¸ªè„‰å†²
 	{
 		DRV_SPI_SD_SendByte(spi_sd, 0xff);
 	}
 	retry=20;
 	do
 	{
-		//½øÈëIDLE×´Ì¬
+		//è¿›å…¥IDLEçŠ¶æ€
 		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD0,0,0x95);
 	}	
 	while((r1!=0X01) && (retry--));
-	//Ä¬ÈÏÎŞ¿¨
+	//é»˜è®¤æ— å¡
 	spi_sd->status.type=0;
-	//Ê¶±ğ¿¨ÀàĞÍ
+	//è¯†åˆ«å¡ç±»å‹
 	if(r1==0X01)
 	{
 		//SD V2.0
@@ -52,24 +70,24 @@ void DRV_SPI_SD_Init(SPI_SD *spi_sd){
 		{
 			//Get trailing return value of R7 resp
 			for(i=0;i<4;i++)buf[i]=DRV_SPI_SD_SendByte(spi_sd, 0XFF);	
-			//¿¨ÊÇ·ñÖ§³Ö2.7~3.6V
+			//å¡æ˜¯å¦æ”¯æŒ2.7~3.6V
 			if(buf[2]==0X01&&buf[3]==0XAA)
 			{
 				retry=0XFFFE;
 				do
 				{
-					//·¢ËÍSD_CMD55
+					//å‘é€SD_CMD55
 					DRV_SPI_SD_SendCmd(spi_sd, SD_CMD55,0,0X01);	
-					//·¢ËÍSD_CMD41
+					//å‘é€SD_CMD41
 					r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD41,0x40000000,0X01);
 				}
 				while(r1&&retry--);
-				//¼ø±ğSD2.0¿¨°æ±¾¿ªÊ¼
+				//é‰´åˆ«SD2.0å¡ç‰ˆæœ¬å¼€å§‹
 				if(retry&&DRV_SPI_SD_SendCmd(spi_sd, SD_CMD58,0,0X01)==0)
 				{
-					//µÃµ½OCRÖµ
+					//å¾—åˆ°OCRå€¼
 					for(i=0;i<4;i++)buf[i]=DRV_SPI_SD_SendByte(spi_sd, 0XFF);
-					//¼ì²éCCS
+					//æ£€æŸ¥CCS
 					if(buf[0]&0x40)
 					{
 						spi_sd->status.type=SD_TYPE_V2_SDHC;   
@@ -85,46 +103,46 @@ void DRV_SPI_SD_Init(SPI_SD *spi_sd){
 	//SD V1.x/ MMC	V3
 	else
 	{
-		//·¢ËÍSD_CMD55
+		//å‘é€SD_CMD55
 		DRV_SPI_SD_SendCmd(spi_sd, SD_CMD55,0,0X01);		
-		//·¢ËÍSD_CMD41
+		//å‘é€SD_CMD41
 		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD41,0,0X01);	
 		if(r1<=1)
 		{		
 			spi_sd->status.type=SD_TYPE_V1_SD;
 			retry=0XFFFE;
-			//µÈ´ıÍË³öIDLEÄ£Ê½
+			//ç­‰å¾…é€€å‡ºIDLEæ¨¡å¼
 			do 
 			{
-				//·¢ËÍSD_CMD55
+				//å‘é€SD_CMD55
 				DRV_SPI_SD_SendCmd(spi_sd, SD_CMD55,0,0X01);	
-				//·¢ËÍSD_CMD41
+				//å‘é€SD_CMD41
 				r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD41,0,0X01);
 			}while(r1&&retry--);
 		}
-		//MMC¿¨²»Ö§³ÖSD_CMD55+SD_CMD41Ê¶±ğ
+		//MMCå¡ä¸æ”¯æŒSD_CMD55+SD_CMD41è¯†åˆ«
 		else
 		{
 			//MMC V3
 			spi_sd->status.type=SD_TYPE_V1_MMC;
 			retry=0XFFFE;
-			//µÈ´ıÍË³öIDLEÄ£Ê½
+			//ç­‰å¾…é€€å‡ºIDLEæ¨¡å¼
 			do 
 			{											    
-				//·¢ËÍSD_CMD1
+				//å‘é€SD_CMD1
 				r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD1,0,0X01);
 			}while(r1&&retry--);  
 		}
-		//´íÎóµÄ¿¨
+		//é”™è¯¯çš„å¡
 		if(retry==0||DRV_SPI_SD_SendCmd(spi_sd, SD_CMD16,512,0X01)!=0)
 		{
 			spi_sd->status.type=SD_TYPE_INIT_FAIL;
 		}
 	}
-	//È¡ÏûÆ¬Ñ¡
+	//å–æ¶ˆç‰‡é€‰
 	DRV_SPI_SD_Select(spi_sd, false);
-	//ÅäÖÃÎª¸ßËÙ¶ÈÄ£Ê½
-	DRV_SPI_SD_Speed(spi_sd, 16*1024);	//ÅäÖÃÎªµÍËÙ¶ÈÄ£Ê½
+	//é…ç½®ä¸ºé«˜é€Ÿåº¦æ¨¡å¼
+	DRV_SPI_SD_Speed(spi_sd, 16*1024);	//é…ç½®ä¸ºä½é€Ÿåº¦æ¨¡å¼
 	if(spi_sd->status.type)
 	{
 		spi_sd->status.sector_num = DRV_SPI_SD_GetSectorCount(spi_sd);
@@ -138,27 +156,27 @@ void DRV_SPI_SD_Init(SPI_SD *spi_sd){
 	
 }
 
-//Ğ´SD¿¨
-//buf:Êı¾İ»º´æÇø
-//sector:ÆğÊ¼ÉÈÇø
-//cnt:ÉÈÇøÊı
-//·µ»ØÖµ:0,ok;ÆäËû,Ê§°Ü.
+//å†™SDå¡
+//buf:æ•°æ®ç¼“å­˜åŒº
+//sector:èµ·å§‹æ‰‡åŒº
+//cnt:æ‰‡åŒºæ•°
+//è¿”å›å€¼:0,ok;å…¶ä»–,å¤±è´¥.
 uint8_t DRV_SPI_SD_WriteMultiBlock(SPI_SD *spi_sd, uint32_t sector,uint8_t*buf,uint8_t cnt)
 {
 	uint8_t r1;
-	//×ª»»Îª×Ö½ÚµØÖ·
+	//è½¬æ¢ä¸ºå­—èŠ‚åœ°å€
 	if(spi_sd->status.type!=SD_TYPE_V2_SDHC)
 	{
 		sector *= 512;
 	}
 	if(cnt==1)
 	{
-		//¶ÁÃüÁî
+		//è¯»å‘½ä»¤
 		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD24,sector,0X01);
-		//Ö¸Áî·¢ËÍ³É¹¦
+		//æŒ‡ä»¤å‘é€æˆåŠŸ
 		if(r1==0)
 		{
-			//Ğ´512¸ö×Ö½Ú	   
+			//å†™512ä¸ªå­—èŠ‚	   
 			r1=DRV_SPI_SD_SendBlock(spi_sd, buf,0xFE);
 		}
 	}
@@ -167,25 +185,25 @@ uint8_t DRV_SPI_SD_WriteMultiBlock(SPI_SD *spi_sd, uint32_t sector,uint8_t*buf,u
 		if(spi_sd->status.type!=SD_TYPE_V1_MMC)
 		{
 			DRV_SPI_SD_SendCmd(spi_sd, SD_CMD55,0,0X01);	
-			//·¢ËÍÖ¸Áî	
+			//å‘é€æŒ‡ä»¤	
 			DRV_SPI_SD_SendCmd(spi_sd, SD_CMD23,cnt,0X01);
 		}
-		//Á¬Ğø¶ÁÃüÁî
+		//è¿ç»­è¯»å‘½ä»¤
  		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD25,sector,0X01);
 		if(r1==0)
 		{
 			do
 			{
-				//½ÓÊÕ512¸ö×Ö½Ú	 
+				//æ¥æ”¶512ä¸ªå­—èŠ‚	 
 				r1=DRV_SPI_SD_SendBlock(spi_sd, buf,0xFC);
 				buf+=512;  
 			}
 			while(--cnt && r1==0);
-			//½ÓÊÕ512¸ö×Ö½Ú 
+			//æ¥æ”¶512ä¸ªå­—èŠ‚ 
 			r1=DRV_SPI_SD_SendBlock(spi_sd, 0,0xFD);
 		}
 	}   
-	//È¡ÏûÆ¬Ñ¡
+	//å–æ¶ˆç‰‡é€‰
 	DRV_SPI_SD_Select(spi_sd, false);
 	return r1;
 }	
@@ -194,37 +212,37 @@ uint8_t DRV_SPI_SD_WriteMultiBlock(SPI_SD *spi_sd, uint32_t sector,uint8_t*buf,u
 uint8_t DRV_SPI_SD_ReadMultiBlock(SPI_SD *spi_sd, uint32_t sector,uint8_t*buf,uint8_t cnt)
 {
 	uint8_t r1;
-	//×ª»»Îª×Ö½ÚµØÖ·
+	//è½¬æ¢ä¸ºå­—èŠ‚åœ°å€
 	if(spi_sd->status.type!=SD_TYPE_V2_SDHC)
 	{
 		sector <<= 9;
 	}
 	if(cnt==1)
 	{
-		//¶ÁÃüÁî
+		//è¯»å‘½ä»¤
 		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD17,sector,0X01);
-		//Ö¸Áî·¢ËÍ³É¹¦
+		//æŒ‡ä»¤å‘é€æˆåŠŸ
 		if(r1==0)
 		{
-			//½ÓÊÕ512¸ö×Ö½Ú	 
+			//æ¥æ”¶512ä¸ªå­—èŠ‚	 
 			r1=DRV_SPI_SD_RecvData(spi_sd, buf,512);  
 		}
 	}
 	else
 	{
-		//Á¬Ğø¶ÁÃüÁî
+		//è¿ç»­è¯»å‘½ä»¤
 		r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD18,sector,0X01);
 		do
 		{
-			//½ÓÊÕ512¸ö×Ö½Ú	 
+			//æ¥æ”¶512ä¸ªå­—èŠ‚	 
 			r1=DRV_SPI_SD_RecvData(spi_sd, buf,512);
 			buf+=512;  
 		}
 		while(--cnt && r1==0); 	
-		//·¢ËÍÍ£Ö¹ÃüÁî
+		//å‘é€åœæ­¢å‘½ä»¤
 		DRV_SPI_SD_SendCmd(spi_sd, SD_CMD12,0,0X01);	
 	}   
-	//È¡ÏûÆ¬Ñ¡
+	//å–æ¶ˆç‰‡é€‰
 	DRV_SPI_SD_Select(spi_sd, false);
 	return r1;
 }
@@ -260,14 +278,14 @@ static uint8_t DRV_SPI_SD_SendByte(SPI_SD *spi_sd, uint8_t data)
 	return rx;
 }
 
-//µÈ´ı¿¨×¼±¸ºÃ
+//ç­‰å¾…å¡å‡†å¤‡å¥½
 static uint8_t DRV_SPI_SD_WaitReady(SPI_SD *spi_sd)
 {
 	uint32_t t=0;
 	uint8_t reg;
 	for(t=0;t<0xffff;t++)
 	{
-		reg=DRV_SPI_SD_SendByte(spi_sd, 0XFF);//»ñÈ¡·µ»ØÖµ
+		reg=DRV_SPI_SD_SendByte(spi_sd, 0XFF);//è·å–è¿”å›å€¼
 		if(reg==0XFF)
 			break; 	
 	}
@@ -278,44 +296,44 @@ static uint8_t DRV_SPI_SD_WaitReady(SPI_SD *spi_sd)
 }
 
 
-//1.Ñ¡Ôñsd¿¨,²¢ÇÒµÈ´ı¿¨×¼±¸OK
-//2.È¡ÏûÑ¡Ôñ,ÊÍ·ÅSPI×ÜÏß
-//·µ»ØÖµ:0,³É¹¦;1,Ê§°Ü;
+//1.é€‰æ‹©sdå¡,å¹¶ä¸”ç­‰å¾…å¡å‡†å¤‡OK
+//2.å–æ¶ˆé€‰æ‹©,é‡Šæ”¾SPIæ€»çº¿
+//è¿”å›å€¼:0,æˆåŠŸ;1,å¤±è´¥;
 static uint8_t DRV_SPI_SD_Select(SPI_SD *spi_sd, bool select)
 {
 	if(select){
-		DRV_SPI_SD_Cs(spi_sd, false);	//µÈ´ıÊ§°Ü
+		DRV_SPI_SD_Cs(spi_sd, false);	//ç­‰å¾…å¤±è´¥
 		if(DRV_SPI_SD_WaitReady(spi_sd)==0){
-			//µÈ´ı³É¹¦
+			//ç­‰å¾…æˆåŠŸ
 			return 0;
 		}else{
-			DRV_SPI_SD_Cs(spi_sd, true);	//µÈ´ıÊ§°Ü
+			DRV_SPI_SD_Cs(spi_sd, true);	//ç­‰å¾…å¤±è´¥
 			return 1;
 		}
 	}else{
 		DRV_SPI_SD_Cs(spi_sd, true);
-		DRV_SPI_SD_SendByte(spi_sd, 0xff);//Ìá¹©¶îÍâµÄ8¸öÊ±ÖÓ
+		DRV_SPI_SD_SendByte(spi_sd, 0xff);//æä¾›é¢å¤–çš„8ä¸ªæ—¶é’Ÿ
 		return true;
 	}
 }
 
-//ÏòSD¿¨·¢ËÍÒ»¸öÃüÁî
-//ÊäÈë: uint8_t cmd   ÃüÁî 
-//      uint32_t arg  ÃüÁî²ÎÊı
-//      uint8_t crc   crcĞ£ÑéÖµ	   
-//·µ»ØÖµ:SD¿¨·µ»ØµÄÏìÓ¦															  
+//å‘SDå¡å‘é€ä¸€ä¸ªå‘½ä»¤
+//è¾“å…¥: uint8_t cmd   å‘½ä»¤ 
+//      uint32_t arg  å‘½ä»¤å‚æ•°
+//      uint8_t crc   crcæ ¡éªŒå€¼	   
+//è¿”å›å€¼:SDå¡è¿”å›çš„å“åº”															  
 static uint8_t DRV_SPI_SD_SendCmd(SPI_SD *spi_sd, uint8_t cmd, uint32_t arg, uint8_t crc)
 {
   uint8_t r1=0;	
 	uint8_t Retry=0; 
-	DRV_SPI_SD_Select(spi_sd, false);	//È¡ÏûÉÏ´ÎÆ¬Ñ¡
+	DRV_SPI_SD_Select(spi_sd, false);	//å–æ¶ˆä¸Šæ¬¡ç‰‡é€‰
 	
-	if(DRV_SPI_SD_Select(spi_sd, true))	//Æ¬Ñ¡Ê§Ğ§ 
+	if(DRV_SPI_SD_Select(spi_sd, true))	//ç‰‡é€‰å¤±æ•ˆ 
 	{
 		return 0XFF;
 	}
-	//·¢ËÍ
-	//·Ö±ğĞ´ÈëÃüÁî
+	//å‘é€
+	//åˆ†åˆ«å†™å…¥å‘½ä»¤
   DRV_SPI_SD_SendByte(spi_sd, cmd | 0x40);
   DRV_SPI_SD_SendByte(spi_sd, arg >> 24);
   DRV_SPI_SD_SendByte(spi_sd, arg >> 16);
@@ -323,39 +341,39 @@ static uint8_t DRV_SPI_SD_SendCmd(SPI_SD *spi_sd, uint8_t cmd, uint32_t arg, uin
   DRV_SPI_SD_SendByte(spi_sd, arg);	  
   DRV_SPI_SD_SendByte(spi_sd, crc); 
 	if(cmd==SD_CMD12)DRV_SPI_SD_SendByte(spi_sd, 0xff);
-  //µÈ´ıÏìÓ¦£¬»ò³¬Ê±ÍË³ö
+  //ç­‰å¾…å“åº”ï¼Œæˆ–è¶…æ—¶é€€å‡º
 	Retry=0X1F;
 	do
 	{
 		r1=DRV_SPI_SD_SendByte(spi_sd, 0xFF);
 	}
 	while((r1&0X80) && Retry--);	 
-	//·µ»Ø×´Ì¬Öµ
+	//è¿”å›çŠ¶æ€å€¼
   return r1;
 }
 
 
-//µÈ´ıSD¿¨»ØÓ¦
-//Response:ÒªµÃµ½µÄ»ØÓ¦Öµ
-//·µ»ØÖµ:0,³É¹¦µÃµ½ÁË¸Ã»ØÓ¦Öµ
-//    ÆäËû,µÃµ½»ØÓ¦ÖµÊ§°Ü
+//ç­‰å¾…SDå¡å›åº”
+//Response:è¦å¾—åˆ°çš„å›åº”å€¼
+//è¿”å›å€¼:0,æˆåŠŸå¾—åˆ°äº†è¯¥å›åº”å€¼
+//    å…¶ä»–,å¾—åˆ°å›åº”å€¼å¤±è´¥
 static uint8_t DRV_SPI_SD_GetResponse(SPI_SD *spi_sd, uint8_t Response)
 {
-	//µÈ´ı´ÎÊı	 
+	//ç­‰å¾…æ¬¡æ•°	 
 	uint16_t Count=0xFFFF;  						  
-	//µÈ´ıµÃµ½×¼È·µÄ»ØÓ¦  	
+	//ç­‰å¾…å¾—åˆ°å‡†ç¡®çš„å›åº”  	
 	while ((DRV_SPI_SD_SendByte(spi_sd, 0XFF)!=Response)&&Count)
 	{
 		Count--;  
 	}
 	if (Count==0)
 	{
-		//µÃµ½»ØÓ¦Ê§°Ü 
+		//å¾—åˆ°å›åº”å¤±è´¥ 
 		return 1;  
 	}
 	else
 	{
-		//ÕıÈ·»ØÓ¦
+		//æ­£ç¡®å›åº”
 		return 0;
 	}
 }
@@ -363,48 +381,48 @@ static uint8_t DRV_SPI_SD_GetResponse(SPI_SD *spi_sd, uint8_t Response)
 
 
 
-//´Ósd¿¨¶ÁÈ¡Ò»¸öÊı¾İ°üµÄÄÚÈİ
-//buf:Êı¾İ»º´æÇø
-//len:Òª¶ÁÈ¡µÄÊı¾İ³¤¶È.
-//·µ»ØÖµ:0,³É¹¦;ÆäËû,Ê§°Ü;	
+//ä»sdå¡è¯»å–ä¸€ä¸ªæ•°æ®åŒ…çš„å†…å®¹
+//buf:æ•°æ®ç¼“å­˜åŒº
+//len:è¦è¯»å–çš„æ•°æ®é•¿åº¦.
+//è¿”å›å€¼:0,æˆåŠŸ;å…¶ä»–,å¤±è´¥;	
 static uint8_t DRV_SPI_SD_RecvData(SPI_SD *spi_sd, uint8_t*buf,uint16_t len)
 {			  	  
-	//µÈ´ıSD¿¨·¢»ØÊı¾İÆğÊ¼ÁîÅÆ0xFE
+	//ç­‰å¾…SDå¡å‘å›æ•°æ®èµ·å§‹ä»¤ç‰Œ0xFE
 	if(DRV_SPI_SD_GetResponse(spi_sd, 0xFE))
 	{
 		return 1;
 	}
-	//¿ªÊ¼½ÓÊÕÊı¾İ
+	//å¼€å§‹æ¥æ”¶æ•°æ®
   while(len--)
   {
     *buf=DRV_SPI_SD_SendByte(spi_sd, 0xFF);
     buf++;
   }
-  //ÏÂÃæÊÇ2¸öÎ±CRC£¨dummy CRC£©
+  //ä¸‹é¢æ˜¯2ä¸ªä¼ªCRCï¼ˆdummy CRCï¼‰
   DRV_SPI_SD_SendByte(spi_sd, 0xFF);
   DRV_SPI_SD_SendByte(spi_sd, 0xFF);		
-  //¶ÁÈ¡³É¹¦							  					    
+  //è¯»å–æˆåŠŸ							  					    
   return 0;
 }
 
 
 
 
-//»ñÈ¡SD¿¨µÄCSDĞÅÏ¢£¬°üÀ¨ÈİÁ¿ºÍËÙ¶ÈĞÅÏ¢
-//ÊäÈë:uint8_t *cid_data(´æ·ÅCIDµÄÄÚ´æ£¬ÖÁÉÙ16Byte£©	    
-//·µ»ØÖµ:0£ºNO_ERR
-//		 1£º´íÎó														   
+//è·å–SDå¡çš„CSDä¿¡æ¯ï¼ŒåŒ…æ‹¬å®¹é‡å’Œé€Ÿåº¦ä¿¡æ¯
+//è¾“å…¥:uint8_t *cid_data(å­˜æ”¾CIDçš„å†…å­˜ï¼Œè‡³å°‘16Byteï¼‰	    
+//è¿”å›å€¼:0ï¼šNO_ERR
+//		 1ï¼šé”™è¯¯														   
 static uint8_t DRV_SPI_SD_GetCSD(SPI_SD *spi_sd, uint8_t *csd_data)
 {
   uint8_t r1;	 
-	//·¢SD_CMD9ÃüÁî£¬¶ÁCSD
+	//å‘SD_CMD9å‘½ä»¤ï¼Œè¯»CSD
   r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD9,0,0x01);
   if(r1==0)
 	{
-		//½ÓÊÕ16¸ö×Ö½ÚµÄÊı¾İ 
+		//æ¥æ”¶16ä¸ªå­—èŠ‚çš„æ•°æ® 
     r1=DRV_SPI_SD_RecvData(spi_sd, csd_data, 16);
   }
-	//È¡ÏûÆ¬Ñ¡
+	//å–æ¶ˆç‰‡é€‰
 	DRV_SPI_SD_Select(spi_sd, false);
 	if(r1)
 	{
@@ -419,35 +437,35 @@ static uint8_t DRV_SPI_SD_GetCSD(SPI_SD *spi_sd, uint8_t *csd_data)
 
 
 
-//»ñÈ¡SD¿¨µÄ×ÜÉÈÇøÊı£¨ÉÈÇøÊı£©   
-//·µ»ØÖµ:0£º È¡ÈİÁ¿³ö´í 
-//       ÆäËû:SD¿¨µÄÈİÁ¿(ÉÈÇøÊı/512×Ö½Ú)
-//Ã¿ÉÈÇøµÄ×Ö½ÚÊı±ØÎª512£¬ÒòÎªÈç¹û²»ÊÇ512£¬Ôò³õÊ¼»¯²»ÄÜÍ¨¹ı.														  
+//è·å–SDå¡çš„æ€»æ‰‡åŒºæ•°ï¼ˆæ‰‡åŒºæ•°ï¼‰   
+//è¿”å›å€¼:0ï¼š å–å®¹é‡å‡ºé”™ 
+//       å…¶ä»–:SDå¡çš„å®¹é‡(æ‰‡åŒºæ•°/512å­—èŠ‚)
+//æ¯æ‰‡åŒºçš„å­—èŠ‚æ•°å¿…ä¸º512ï¼Œå› ä¸ºå¦‚æœä¸æ˜¯512ï¼Œåˆ™åˆå§‹åŒ–ä¸èƒ½é€šè¿‡.														  
 static uint32_t DRV_SPI_SD_GetSectorCount(SPI_SD *spi_sd)
 {
     uint8_t csd[16];
     uint32_t Capacity;  
     uint8_t n;
 		uint16_t csize;  					    
-		//È¡CSDĞÅÏ¢£¬Èç¹ûÆÚ¼ä³ö´í£¬·µ»Ø0
+		//å–CSDä¿¡æ¯ï¼Œå¦‚æœæœŸé—´å‡ºé”™ï¼Œè¿”å›0
     if(DRV_SPI_SD_GetCSD(spi_sd, csd)!=0)
 		{
 			return 0;	    
 		}
-    //Èç¹ûÎªSDHC¿¨£¬°´ÕÕÏÂÃæ·½Ê½¼ÆËã
-		//V2.00µÄ¿¨
+    //å¦‚æœä¸ºSDHCå¡ï¼ŒæŒ‰ç…§ä¸‹é¢æ–¹å¼è®¡ç®—
+		//V2.00çš„å¡
     if((csd[0]&0xC0)==0x40)	 
     {	
 			csize = csd[9] + ((uint16_t)csd[8] << 8) + 1;
-			//µÃµ½ÉÈÇøÊı	
+			//å¾—åˆ°æ‰‡åŒºæ•°	
 			Capacity = (uint32_t)csize << 10; 		   
     }
-		//V1.XXµÄ¿¨
+		//V1.XXçš„å¡
 		else
     {	
 			n = (csd[5] & 15) + ((csd[10] & 128) >> 7) + ((csd[9] & 3) << 1) + 2;
 			csize = (csd[8] >> 6) + ((uint16_t)csd[7] << 2) + ((uint16_t)(csd[6] & 3) << 10) + 1;
-			//µÃµ½ÉÈÇøÊı 
+			//å¾—åˆ°æ‰‡åŒºæ•° 
 			Capacity= (uint32_t)csize << (n - 9);  
     }
     return Capacity;
@@ -457,21 +475,21 @@ static uint32_t DRV_SPI_SD_GetSectorCount(SPI_SD *spi_sd)
 
 
 
-//»ñÈ¡SD¿¨µÄCIDĞÅÏ¢£¬°üÀ¨ÖÆÔìÉÌĞÅÏ¢
-//ÊäÈë: uint8_t *cid_data(´æ·ÅCIDµÄÄÚ´æ£¬ÖÁÉÙ16Byte£©	  
-//·µ»ØÖµ:0£ºNO_ERR
-//		 1£º´íÎó														   
+//è·å–SDå¡çš„CIDä¿¡æ¯ï¼ŒåŒ…æ‹¬åˆ¶é€ å•†ä¿¡æ¯
+//è¾“å…¥: uint8_t *cid_data(å­˜æ”¾CIDçš„å†…å­˜ï¼Œè‡³å°‘16Byteï¼‰	  
+//è¿”å›å€¼:0ï¼šNO_ERR
+//		 1ï¼šé”™è¯¯														   
 static uint8_t DRV_SPI_SD_GetCID(SPI_SD *spi_sd, uint8_t *cid_data)
 {
   uint8_t r1;	   
-  //·¢SD_CMD10ÃüÁî£¬¶ÁCID
+  //å‘SD_CMD10å‘½ä»¤ï¼Œè¯»CID
   r1=DRV_SPI_SD_SendCmd(spi_sd, SD_CMD10,0,0x01);
   if(r1==0x00)
 	{
-		//½ÓÊÕ16¸ö×Ö½ÚµÄÊı¾İ	 
+		//æ¥æ”¶16ä¸ªå­—èŠ‚çš„æ•°æ®	 
 		r1=DRV_SPI_SD_RecvData(spi_sd, cid_data,16);
   }
-	//È¡ÏûÆ¬Ñ¡
+	//å–æ¶ˆç‰‡é€‰
 	DRV_SPI_SD_Select(spi_sd, false);
 	if(r1)
 		return 1;
@@ -482,39 +500,39 @@ static uint8_t DRV_SPI_SD_GetCID(SPI_SD *spi_sd, uint8_t *cid_data)
 
 
 
-//Ïòsd¿¨Ğ´ÈëÒ»¸öÊı¾İ°üµÄÄÚÈİ 512×Ö½Ú
-//buf:Êı¾İ»º´æÇø
-//cmd:Ö¸Áî
-//·µ»ØÖµ:0,³É¹¦;ÆäËû,Ê§°Ü;	
+//å‘sdå¡å†™å…¥ä¸€ä¸ªæ•°æ®åŒ…çš„å†…å®¹ 512å­—èŠ‚
+//buf:æ•°æ®ç¼“å­˜åŒº
+//cmd:æŒ‡ä»¤
+//è¿”å›å€¼:0,æˆåŠŸ;å…¶ä»–,å¤±è´¥;	
 static uint8_t DRV_SPI_SD_SendBlock(SPI_SD *spi_sd, uint8_t*buf,uint8_t cmd)
 {	
 	uint16_t t;		  	  
-	//µÈ´ı×¼±¸Ê§Ğ§
+	//ç­‰å¾…å‡†å¤‡å¤±æ•ˆ
 	if(DRV_SPI_SD_WaitReady(spi_sd))
 	{
 		return 1;
 	}
 	DRV_SPI_SD_SendByte(spi_sd, cmd);
-	//²»ÊÇ½áÊøÖ¸Áî
+	//ä¸æ˜¯ç»“æŸæŒ‡ä»¤
 	if(cmd!=0XFD)
 	{
-		//Ìá¸ßËÙ¶È,¼õÉÙº¯Êı´«²ÎÊ±¼ä
+		//æé«˜é€Ÿåº¦,å‡å°‘å‡½æ•°ä¼ å‚æ—¶é—´
 		for(t=0;t<512;t++)
 		{
 			DRV_SPI_SD_SendByte(spi_sd, buf[t]);
 		}
-		//ºöÂÔcrc
+		//å¿½ç•¥crc
 	  DRV_SPI_SD_SendByte(spi_sd, 0xFF);
 	  DRV_SPI_SD_SendByte(spi_sd, 0xFF);
-		//½ÓÊÕÏìÓ¦
+		//æ¥æ”¶å“åº”
 		t=DRV_SPI_SD_SendByte(spi_sd, 0xFF);
 		if((t&0x1F)!=0x05)
 		{
-			//ÏìÓ¦´íÎó		
+			//å“åº”é”™è¯¯		
 			return 2;		
 		}			
 	}						 		
-	//Ğ´Èë³É¹¦							  					    
+	//å†™å…¥æˆåŠŸ							  					    
   return 0;
 }
 
